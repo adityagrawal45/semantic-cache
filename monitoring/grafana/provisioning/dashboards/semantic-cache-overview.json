@@ -1,0 +1,83 @@
+{
+  "title": "Semantic Cache Overview",
+  "uid": "semantic-cache-overview",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "time": { "from": "now-6h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Cache Hit Rate",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "sum(rate(cache_hit_total[5m])) / (sum(rate(cache_hit_total[5m])) + sum(rate(cache_miss_total[5m])))",
+          "legendFormat": "hit rate"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Requests / sec (Hit vs Miss)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 6, "y": 0 },
+      "targets": [
+        { "expr": "sum(rate(cache_hit_total[1m]))", "legendFormat": "hits/sec" },
+        { "expr": "sum(rate(cache_miss_total[1m]))", "legendFormat": "misses/sec" }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Cumulative Cost Savings ($)",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "currencyUSD" }, "overrides": [] },
+      "targets": [
+        { "expr": "sum(cost_savings_dollars)", "legendFormat": "total saved" }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Latency Percentiles — Cache Hit (s)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum(rate(cache_latency_seconds_bucket{outcome=\"hit\"}[5m])) by (le))", "legendFormat": "p50" },
+        { "expr": "histogram_quantile(0.95, sum(rate(cache_latency_seconds_bucket{outcome=\"hit\"}[5m])) by (le))", "legendFormat": "p95" },
+        { "expr": "histogram_quantile(0.99, sum(rate(cache_latency_seconds_bucket{outcome=\"hit\"}[5m])) by (le))", "legendFormat": "p99" }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Latency Percentiles — Cache Miss (s)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, sum(rate(cache_latency_seconds_bucket{outcome=\"miss\"}[5m])) by (le))", "legendFormat": "p50" },
+        { "expr": "histogram_quantile(0.95, sum(rate(cache_latency_seconds_bucket{outcome=\"miss\"}[5m])) by (le))", "legendFormat": "p95" },
+        { "expr": "histogram_quantile(0.99, sum(rate(cache_latency_seconds_bucket{outcome=\"miss\"}[5m])) by (le))", "legendFormat": "p99" }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Cache Size (entries)",
+      "type": "timeseries",
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 16 },
+      "targets": [
+        { "expr": "cache_size_entries", "legendFormat": "entries" }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Similarity Score Distribution",
+      "type": "heatmap",
+      "gridPos": { "h": 7, "w": 16, "x": 8, "y": 16 },
+      "targets": [
+        { "expr": "sum(rate(similarity_score_bucket[5m])) by (le)", "format": "heatmap", "legendFormat": "{{le}}" }
+      ]
+    }
+  ]
+}

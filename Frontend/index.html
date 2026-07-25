@@ -550,8 +550,11 @@
     gaugeScore.classList.remove('pending');
 
     if (typeof threshold === 'number') {
-      // gauge sweeps 0→180deg across the arc; map threshold to rotation
-      const deg = threshold * 180;
+      // The tick line is drawn pointing straight up, which corresponds to
+      // the gauge's midpoint (score 0.5). Rotate it relative to that
+      // midpoint — not from zero — so threshold=0.95 lands near the right
+      // (high-score) end of the arc instead of near the bottom.
+      const deg = (threshold - 0.5) * 180;
       gaugeThreshold.setAttribute('transform', `rotate(${deg} 100 100)`);
       statThreshold.textContent = threshold.toFixed(2);
     }
@@ -603,7 +606,9 @@
       const elapsedMs = performance.now() - start;
       const isHit = res.headers.get('Cache-Hit') === 'true';
       const scoreHeader = res.headers.get('X-Similarity-Score');
-      const score = scoreHeader ? parseFloat(scoreHeader) : (isHit ? 1 : 0);
+      const thresholdHeader = res.headers.get('X-Threshold');
+      const score = scoreHeader ? parseFloat(scoreHeader) : 0;
+      const threshold = thresholdHeader ? parseFloat(thresholdHeader) : undefined;
 
       if (!res.ok) {
         const errBody = await res.text();
@@ -626,7 +631,7 @@
       const content = data?.choices?.[0]?.message?.content ?? '(no content)';
 
       responseText.textContent = content;
-      setGauge(score, isHit, data.similarity_score != null ? undefined : undefined);
+      setGauge(score, isHit, threshold);
       hitBadge.className = `badge ${isHit ? 'hit' : 'miss'}`;
       hitBadge.textContent = isHit ? 'CACHE HIT' : 'CACHE MISS';
       statLatency.textContent = `${elapsedMs.toFixed(0)} ms`;

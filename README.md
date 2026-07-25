@@ -103,6 +103,9 @@ semantic-cache/
 │   └── routes.py                # All HTTP endpoints
 ├── redis_index/
 │   └── index_schema.py          # RedisVL index schema + idempotent creation
+├── frontend/
+│   ├── index.html                # Recall playground — dependency-free single-page UI
+│   └── Dockerfile                # nginx static file server
 ├── monitoring/
 │   ├── prometheus.yml
 │   └── grafana/provisioning/    # Datasource + pre-built dashboard JSON
@@ -192,6 +195,7 @@ docker-compose up --build
 
 This starts:
 - **api** — the FastAPI service on `:8000`
+- **frontend** — the Recall playground UI on `:5173`
 - **redis** — Redis Stack (includes RedisVL's vector search module) on `:6379`
 - **prometheus** — on `:9090`
 - **grafana** — on `:3000` (default login `admin` / `admin`, override in `.env`)
@@ -215,7 +219,18 @@ curl http://localhost:8000/v1/chat/completions \
 
 Open Grafana at `http://localhost:3000` → the "Semantic Cache Overview" dashboard is provisioned automatically.
 
-### 4. Point your application at it
+### 4. Try the playground
+
+Open `http://localhost:5173`. This is a small standalone frontend (`frontend/index.html`, no build step, no framework) with two things Grafana can't give you:
+
+- **A live "Recall Meter"** — send a prompt, then send it (or a near-duplicate of it) again, and watch the gauge sweep to the actual cosine similarity score returned in the `X-Similarity-Score` response header, with a tick mark showing the active threshold (from `X-Threshold`). The gauge flips from "cache miss" (blue) to "cache hit" (amber) as the score crosses that threshold. Note: on a miss, `X-Similarity-Score` reflects the *closest* match found, even though it fell short — so the gauge shows "how close" a miss actually was, not just a flat zero.
+- **A cache browser** — a live table of what's actually stored (provider, prompt preview, hit count, time-to-live remaining), backed by a new `GET /cache/entries` endpoint, so you can see the cache's actual contents instead of only aggregate metrics.
+
+The API URL field at the top defaults to `http://localhost:8000`; change it if you're pointing the playground at a different deployment. CORS is enabled on the API (`app/main.py`) specifically so this browser-based frontend can call it directly, with `Cache-Hit`, `X-Similarity-Score`, and `X-Threshold` explicitly exposed via `expose_headers` (browsers hide custom response headers from JS by default otherwise) — see the code comment there if you need to lock `allow_origins` down for a non-local deployment.
+
+> If you update `frontend/index.html`, `app/main.py`, or `app/routes.py` locally, remember: (1) Docker layer caching means `docker-compose up --build` can silently skip re-copying a changed file if Docker doesn't detect the change — `docker-compose build --no-cache api frontend` forces a clean rebuild if you're ever unsure whether your edits actually made it into the running containers, and (2) browsers aggressively cache static files like this one, so a hard refresh (`Ctrl+Shift+R`) or incognito window may be needed to see frontend changes.
+
+### 5. Point your application at it
 
 Anywhere your app currently calls `https://api.openai.com/v1/chat/completions`, point it at `http://<this-service>:8000/v1/chat/completions` instead. No other client-side changes required for basic usage. Optional extensions (`x_threshold`, `x_request_type`, `x_no_cache`) are additive fields your client can ignore if unused.
 
@@ -289,13 +304,16 @@ using the token counts from the originally-cached response, so the projection re
 
 ## Demo Script
 
-For a live walkthrough (e.g. in a team demo):
+For a live walkthrough (e.g. in a team demo), the playground (`http://localhost:5173`) is the fastest way to make this tangible:
 
-1. Send a fresh, unique prompt — show `Cache-Hit: false` and note the latency in the response headers.
-2. Send the *exact same* prompt again — show `Cache-Hit: true` and the dramatically lower latency.
-3. Send a *reworded* version of the same question (e.g. "Can you explain X?" vs. "What is X?") — show it also hits, with the `X-Similarity-Score` header just under 1.0.
-4. Pull up the Grafana dashboard (`http://localhost:3000`) and point at the hit-rate and cost-savings panels ticking up in real time.
-5. Run `load_test/load_test.py` live and watch the dashboard's request-rate and latency panels respond.
+1. Send a fresh, unique prompt in the playground — watch the Recall Meter register a miss, note the latency.
+2. Send the *exact same* prompt again — watch the gauge sweep to `1.000`, flip to amber, badge switches to `CACHE HIT`, latency drops dramatically.
+3. Send a *reworded* version of the same question (e.g. "Can you explain X?" vs. "What is X?") — with real embeddings configured (not mock mode), this also hits, with the gauge landing just under the threshold tick instead of at `1.000`.
+4. Scroll down to the Cache Browser to show the actual stored entry, hit count, and TTL remaining.
+5. Pull up the Grafana dashboard (`http://localhost:3000`) and point at the hit-rate and cost-savings panels ticking up in real time.
+6. Run `load_test/load_test.py` live and watch the dashboard's request-rate and latency panels respond.
+
+If you don't have the playground running, the same story works via raw headers: `Cache-Hit`, `X-Similarity-Score`, and `X-Threshold` are present on every `/v1/chat/completions` response.
 
 ## Testing
 

@@ -77,12 +77,14 @@ async def chat_completions(request: Request, body: ChatCompletionRequest, respon
     system_hash = hash_system_prompt(system_text)
     param_hash = hash_params(body.model_dump(exclude={"x_threshold", "x_request_type", "x_no_cache"}))
     threshold = _resolve_threshold(body)
+    response.headers["X-Threshold"] = f"{threshold:.4f}"
 
     start = time.perf_counter()
+    best_score = None
 
     if not body.x_no_cache:
         embedding = await embed_text(user_prompt)
-        cached_entry, score = await cache_engine.lookup(
+        cached_entry, best_score = await cache_engine.lookup(
             embedding=embedding,
             provider=provider.name,
             system_hash=system_hash,
@@ -102,29 +104,42 @@ async def chat_completions(request: Request, body: ChatCompletionRequest, respon
                 settings.cost_per_1k_output_tokens,
             )
             response.headers["Cache-Hit"] = "true"
-            response.headers["X-Similarity-Score"] = f"{score:.4f}"
+            response.headers["X-Similarity-Score"] = f"{best_score:.4f}"
 
             if body.stream:
                 return StreamingResponse(
                     _replay_cached_stream(cached_entry),
                     media_type="text/event-stream",
-                    headers={"Cache-Hit": "true", "X-Similarity-Score": f"{score:.4f}"},
+                    headers={
+                        "Cache-Hit": "true",
+                        "X-Similarity-Score": f"{best_score:.4f}",
+                        "X-Threshold": f"{threshold:.4f}",
+                    },
                 )
 
             cached_entry["cache_hit"] = True
-            cached_entry["similarity_score"] = score
+            cached_entry["similarity_score"] = best_score
             return ChatCompletionResponse(**cached_entry)
     else:
         embedding = None
 
     # --- Cache miss path ---
+    # `best_score` may still hold a value here (the closest match found, just
+    # below threshold) — surface it so the frontend's gauge shows "how close"
+    # a miss actually was, instead of always resetting to zero. It's None
+    # only when x_no_cache was set or nothing has ever been cached yet.
     response.headers["Cache-Hit"] = "false"
+    if best_score is not None:
+        response.headers["X-Similarity-Score"] = f"{best_score:.4f}"
 
     if body.stream:
+        miss_headers = {"Cache-Hit": "false", "X-Threshold": f"{threshold:.4f}"}
+        if best_score is not None:
+            miss_headers["X-Similarity-Score"] = f"{best_score:.4f}"
         return StreamingResponse(
             _stream_and_cache(body, provider, embedding, system_hash, param_hash, user_prompt, start),
             media_type="text/event-stream",
-            headers={"Cache-Hit": "false"},
+            headers=miss_headers,
         )
 
     result = await provider.complete(body)

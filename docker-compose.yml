@@ -25,6 +25,19 @@ services:
     networks:
       - cache-net
 
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: semantic-cache-frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      - api
+    restart: unless-stopped
+    networks:
+      - cache-net
+
   redis:
     image: redis/redis-stack-server:7.4.0-v0
     container_name: semantic-cache-redis

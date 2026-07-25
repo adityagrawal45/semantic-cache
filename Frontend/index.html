@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Recall — Semantic Cache Playground</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0B0E14;
+    --surface: #141920;
+    --raised: #1B222C;
+    --border: #262E3A;
+    --text: #E7EBF0;
+    --dim: #8993A4;
+    --dimmer: #576072;
+    --recall: #F2A83B;
+    --recall-soft: rgba(242, 168, 59, 0.12);
+    --compute: #5C8DF6;
+    --compute-soft: rgba(92, 141, 246, 0.12);
+    --danger: #E8596A;
+    --danger-soft: rgba(232, 89, 106, 0.12);
+    --radius: 10px;
+    --font-display: 'Space Grotesk', sans-serif;
+    --font-ui: 'Inter', sans-serif;
+    --font-mono: 'IBM Plex Mono', monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-ui);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    background-image:
+      radial-gradient(circle at 15% -10%, rgba(92, 141, 246, 0.08), transparent 40%),
+      radial-gradient(circle at 85% 0%, rgba(242, 168, 59, 0.06), transparent 40%);
+  }
+
+  a { color: var(--compute); }
+
+  :focus-visible {
+    outline: 2px solid var(--compute);
+    outline-offset: 2px;
+  }
+
+  .shell {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 28px 24px 80px;
+  }
+
+  /* ---------- Header ---------- */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    padding-bottom: 24px;
+    margin-bottom: 28px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .wordmark {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 20px;
+    letter-spacing: -0.01em;
+  }
+
+  .wordmark .mark {
+    width: 26px;
+    height: 26px;
+    border-radius: 7px;
+    background: linear-gradient(135deg, var(--compute), var(--recall));
+    flex-shrink: 0;
+  }
+
+  .wordmark .tag {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--dim);
+    letter-spacing: 0.02em;
+    margin-left: 4px;
+  }
+
+  .api-config {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--dim);
+  }
+
+  .api-config input {
+    width: 240px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    padding: 7px 10px;
+    border-radius: 6px;
+  }
+
+  .status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--dimmer);
+    flex-shrink: 0;
+    transition: background 0.2s;
+  }
+  .status-dot.up { background: var(--recall); box-shadow: 0 0 6px var(--recall); }
+  .status-dot.down { background: var(--danger); }
+
+  /* ---------- Playground grid ---------- */
+  .playground {
+    display: grid;
+    grid-template-columns: 1fr 320px;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+
+  @media (max-width: 780px) {
+    .playground { grid-template-columns: 1fr; }
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+  }
+
+  .card h2 {
+    font-family: var(--font-display);
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--dim);
+    margin: 0 0 16px;
+  }
+
+  .field-row {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+
+  .field {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .field label {
+    display: block;
+    font-size: 11px;
+    color: var(--dimmer);
+    font-family: var(--font-mono);
+    margin-bottom: 6px;
+  }
+
+  select, input[type="text"], input[type="number"] {
+    width: 100%;
+    background: var(--raised);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: var(--font-ui);
+    font-size: 13px;
+    padding: 9px 10px;
+    border-radius: 7px;
+  }
+
+  textarea {
+    width: 100%;
+    min-height: 110px;
+    background: var(--raised);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: var(--font-ui);
+    font-size: 14px;
+    line-height: 1.5;
+    padding: 12px;
+    border-radius: 7px;
+    resize: vertical;
+  }
+
+  .send-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 14px;
+  }
+
+  .hint {
+    font-size: 11.5px;
+    color: var(--dimmer);
+    font-family: var(--font-mono);
+  }
+
+  button.primary {
+    background: var(--compute);
+    color: #08101F;
+    border: none;
+    font-family: var(--font-ui);
+    font-weight: 600;
+    font-size: 13.5px;
+    padding: 10px 20px;
+    border-radius: 7px;
+    cursor: pointer;
+    transition: filter 0.15s, transform 0.1s;
+  }
+  button.primary:hover { filter: brightness(1.08); }
+  button.primary:active { transform: scale(0.98); }
+  button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* ---------- Recall meter (signature element) ---------- */
+  .meter-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+
+  .gauge-wrap {
+    position: relative;
+    width: 200px;
+    height: 120px;
+    margin-bottom: 6px;
+  }
+
+  .gauge-wrap svg { width: 100%; height: 100%; overflow: visible; }
+
+  .gauge-track { stroke: var(--raised); }
+  .gauge-fill {
+    stroke: var(--compute);
+    stroke-linecap: round;
+    transition: stroke-dashoffset 0.9s cubic-bezier(0.16, 1, 0.3, 1), stroke 0.4s ease;
+  }
+  .gauge-fill.hit { stroke: var(--recall); }
+
+  .gauge-threshold { stroke: var(--dimmer); stroke-width: 2; }
+
+  .gauge-readout {
+    position: absolute;
+    left: 0; right: 0;
+    top: 58px;
+    text-align: center;
+  }
+
+  .gauge-score {
+    font-family: var(--font-mono);
+    font-size: 30px;
+    font-weight: 600;
+    line-height: 1;
+    color: var(--text);
+  }
+
+  .gauge-score.pending { color: var(--dimmer); }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    padding: 4px 10px;
+    border-radius: 100px;
+    margin-top: 10px;
+  }
+  .badge.hit { background: var(--recall-soft); color: var(--recall); }
+  .badge.miss { background: var(--compute-soft); color: var(--compute); }
+  .badge.idle { background: var(--raised); color: var(--dimmer); }
+
+  .meter-stats {
+    width: 100%;
+    margin-top: 18px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+  }
+
+  .meter-stats .row {
+    display: flex;
+    justify-content: space-between;
+    color: var(--dim);
+  }
+  .meter-stats .row span:last-child { color: var(--text); }
+
+  /* ---------- Response panel ---------- */
+  .response-card {
+    min-height: 60px;
+  }
+
+  .response-text {
+    font-size: 14.5px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    color: var(--text);
+  }
+
+  .response-text.empty {
+    color: var(--dimmer);
+    font-family: var(--font-mono);
+    font-size: 13px;
+  }
+
+  .error-box {
+    background: var(--danger-soft);
+    border: 1px solid rgba(232, 89, 106, 0.35);
+    color: var(--danger);
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    padding: 12px 14px;
+    border-radius: 8px;
+  }
+
+  /* ---------- Cache browser ---------- */
+  .browser-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+  }
+
+  .browser-header h2 { margin: 0; }
+
+  .browser-header .actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  button.ghost {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--dim);
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    padding: 6px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  button.ghost:hover { border-color: var(--dim); color: var(--text); }
+
+  .count-chip {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--dimmer);
+    background: var(--raised);
+    padding: 4px 9px;
+    border-radius: 100px;
+  }
+
+  table { width: 100%; border-collapse: collapse; }
+
+  thead th {
+    text-align: left;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--dimmer);
+    font-weight: 500;
+    padding: 0 10px 10px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  tbody td {
+    padding: 12px 10px;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+    vertical-align: top;
+  }
+
+  tbody tr:last-child td { border-bottom: none; }
+
+  .provider-chip {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    text-transform: uppercase;
+    color: var(--dim);
+    background: var(--raised);
+    padding: 3px 8px;
+    border-radius: 5px;
+    white-space: nowrap;
+  }
+
+  .prompt-preview {
+    color: var(--text);
+    max-width: 340px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .num-cell { font-family: var(--font-mono); color: var(--dim); white-space: nowrap; }
+
+  .empty-state {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--dimmer);
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .gauge-fill { transition: none; }
+  }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <header>
+    <div class="wordmark">
+      <div class="mark"></div>
+      RECALL
+      <span class="tag">semantic cache playground</span>
+    </div>
+    <div class="api-config">
+      <span class="status-dot" id="statusDot"></span>
+      <span>API</span>
+      <input type="text" id="apiUrl" value="http://localhost:8000" spellcheck="false">
+    </div>
+  </header>
+
+  <div class="playground">
+    <div class="card">
+      <h2>Query</h2>
+      <div class="field-row">
+        <div class="field">
+          <label for="modelInput">Model</label>
+          <input type="text" id="modelInput" value="llama-3.3-70b-versatile" spellcheck="false">
+        </div>
+        <div class="field" style="max-width: 110px;">
+          <label for="tempInput">Temp</label>
+          <input type="number" id="tempInput" value="0.7" step="0.1" min="0" max="2">
+        </div>
+      </div>
+      <div class="field">
+        <label for="promptInput">Prompt</label>
+        <textarea id="promptInput" placeholder="Ask something, then ask it again — watch the gauge.">Explain the water cycle in simple terms.</textarea>
+      </div>
+      <div class="send-row">
+        <span class="hint" id="sendHint">Sends to POST /v1/chat/completions</span>
+        <button class="primary" id="sendBtn">Send ▸</button>
+      </div>
+    </div>
+
+    <div class="card meter-card">
+      <h2>Recall Meter</h2>
+      <div class="gauge-wrap">
+        <svg viewBox="0 0 200 110">
+          <path class="gauge-track" d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke-width="14"/>
+          <path class="gauge-fill" id="gaugeFill" d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke-width="14"
+                stroke-dasharray="251.3" stroke-dashoffset="251.3"/>
+          <line class="gauge-threshold" id="gaugeThreshold" x1="100" y1="100" x2="100" y2="82"
+                transform="rotate(0 100 100)"/>
+        </svg>
+        <div class="gauge-readout">
+          <div class="gauge-score pending" id="gaugeScore">—</div>
+        </div>
+      </div>
+      <div class="badge idle" id="hitBadge">IDLE</div>
+
+      <div class="meter-stats">
+        <div class="row"><span>Latency</span><span id="statLatency">—</span></div>
+        <div class="row"><span>Threshold</span><span id="statThreshold">—</span></div>
+        <div class="row"><span>Provider</span><span id="statProvider">—</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card response-card" style="margin-bottom: 28px;">
+    <h2>Response</h2>
+    <div class="response-text empty" id="responseText">Send a query to see the response here.</div>
+  </div>
+
+  <div class="card">
+    <div class="browser-header">
+      <h2 style="margin:0;">Cache Browser</h2>
+      <div class="actions">
+        <span class="count-chip" id="entryCount">0 entries</span>
+        <button class="ghost" id="refreshBtn">Refresh</button>
+      </div>
+    </div>
+    <div id="tableWrap">
+      <div class="empty-state">No cache entries yet — send a query above to populate the cache.</div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const apiUrlInput = $('apiUrl');
+  const statusDot = $('statusDot');
+  const modelInput = $('modelInput');
+  const tempInput = $('tempInput');
+  const promptInput = $('promptInput');
+  const sendBtn = $('sendBtn');
+  const sendHint = $('sendHint');
+  const gaugeFill = $('gaugeFill');
+  const gaugeScore = $('gaugeScore');
+  const gaugeThreshold = $('gaugeThreshold');
+  const hitBadge = $('hitBadge');
+  const statLatency = $('statLatency');
+  const statThreshold = $('statThreshold');
+  const statProvider = $('statProvider');
+  const responseText = $('responseText');
+  const tableWrap = $('tableWrap');
+  const entryCount = $('entryCount');
+  const refreshBtn = $('refreshBtn');
+
+  const ARC_LENGTH = 251.3; // matches stroke-dasharray on the gauge path
+
+  function apiBase() {
+    return apiUrlInput.value.replace(/\/+$/, '');
+  }
+
+  function setGauge(score, isHit, threshold) {
+    const clamped = Math.max(0, Math.min(1, score));
+    gaugeFill.setAttribute('stroke-dashoffset', String(ARC_LENGTH * (1 - clamped)));
+    gaugeFill.classList.toggle('hit', !!isHit);
+    gaugeScore.textContent = score.toFixed(3);
+    gaugeScore.classList.remove('pending');
+
+    if (typeof threshold === 'number') {
+      // gauge sweeps 0→180deg across the arc; map threshold to rotation
+      const deg = threshold * 180;
+      gaugeThreshold.setAttribute('transform', `rotate(${deg} 100 100)`);
+      statThreshold.textContent = threshold.toFixed(2);
+    }
+  }
+
+  function resetGauge() {
+    gaugeFill.setAttribute('stroke-dashoffset', String(ARC_LENGTH));
+    gaugeFill.classList.remove('hit');
+    gaugeScore.textContent = '—';
+    gaugeScore.classList.add('pending');
+  }
+
+  async function checkHealth() {
+    try {
+      const res = await fetch(`${apiBase()}/health`, { method: 'GET' });
+      statusDot.classList.toggle('up', res.ok);
+      statusDot.classList.toggle('down', !res.ok);
+    } catch (e) {
+      statusDot.classList.remove('up');
+      statusDot.classList.add('down');
+    }
+  }
+
+  async function sendQuery() {
+    const model = modelInput.value.trim();
+    const prompt = promptInput.value.trim();
+    if (!model || !prompt) return;
+
+    sendBtn.disabled = true;
+    sendBtn.textContent = 'Sending…';
+    sendHint.textContent = 'Waiting for response…';
+    responseText.textContent = '';
+    responseText.classList.remove('empty');
+
+    const start = performance.now();
+
+    try {
+      const res = await fetch(`${apiBase()}/v1/chat/completions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model,
+          temperature: parseFloat(tempInput.value) || 0.7,
+          messages: [{ role: 'user', content: prompt }],
+          stream: false,
+        }),
+      });
+
+      const elapsedMs = performance.now() - start;
+      const isHit = res.headers.get('Cache-Hit') === 'true';
+      const scoreHeader = res.headers.get('X-Similarity-Score');
+      const score = scoreHeader ? parseFloat(scoreHeader) : (isHit ? 1 : 0);
+
+      if (!res.ok) {
+        const errBody = await res.text();
+        responseText.innerHTML = '';
+        const box = document.createElement('div');
+        box.className = 'error-box';
+        box.textContent = `HTTP ${res.status} — ${errBody.slice(0, 400)}`;
+        responseText.appendChild(box);
+        hitBadge.className = 'badge idle';
+        hitBadge.textContent = 'ERROR';
+        statusDot.classList.remove('up');
+        statusDot.classList.add('down');
+        return;
+      }
+
+      statusDot.classList.add('up');
+      statusDot.classList.remove('down');
+
+      const data = await res.json();
+      const content = data?.choices?.[0]?.message?.content ?? '(no content)';
+
+      responseText.textContent = content;
+      setGauge(score, isHit, data.similarity_score != null ? undefined : undefined);
+      hitBadge.className = `badge ${isHit ? 'hit' : 'miss'}`;
+      hitBadge.textContent = isHit ? 'CACHE HIT' : 'CACHE MISS';
+      statLatency.textContent = `${elapsedMs.toFixed(0)} ms`;
+      statProvider.textContent = `${data.model || model}`;
+
+      refreshEntries();
+    } catch (err) {
+      responseText.innerHTML = '';
+      const box = document.createElement('div');
+      box.className = 'error-box';
+      box.textContent = `Request failed: ${err.message}. Check the API URL above and that the service is running (CORS enabled?).`;
+      responseText.appendChild(box);
+      hitBadge.className = 'badge idle';
+      hitBadge.textContent = 'ERROR';
+      statusDot.classList.remove('up');
+      statusDot.classList.add('down');
+    } finally {
+      sendBtn.disabled = false;
+      sendBtn.textContent = 'Send ▸';
+      sendHint.textContent = 'Sends to POST /v1/chat/completions';
+    }
+  }
+
+  function timeAgo(unixSeconds) {
+    if (!unixSeconds) return '—';
+    const diff = Date.now() / 1000 - unixSeconds;
+    if (diff < 60) return `${Math.floor(diff)}s ago`;
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+    return `${Math.floor(diff / 86400)}d ago`;
+  }
+
+  function ttlRemaining(createdAt, ttlSeconds) {
+    if (!createdAt || !ttlSeconds) return '—';
+    const remaining = (createdAt + ttlSeconds) - (Date.now() / 1000);
+    if (remaining <= 0) return 'expired';
+    if (remaining < 3600) return `${Math.floor(remaining / 60)}m left`;
+    return `${Math.floor(remaining / 3600)}h left`;
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  async function refreshEntries() {
+    try {
+      const res = await fetch(`${apiBase()}/cache/entries?limit=50`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      const entries = data.entries || [];
+      entryCount.textContent = `${data.count ?? entries.length} entries`;
+
+      if (entries.length === 0) {
+        tableWrap.innerHTML = '<div class="empty-state">No cache entries yet — send a query above to populate the cache.</div>';
+        return;
+      }
+
+      const rows = entries.map((e) => `
+        <tr>
+          <td><span class="provider-chip">${escapeHtml(e.provider || 'unknown')}</span></td>
+          <td class="prompt-preview" title="${escapeHtml(e.prompt_text || '')}">${escapeHtml(e.prompt_text || '(empty)')}</td>
+          <td class="num-cell">${e.hit_count ?? 0}</td>
+          <td class="num-cell">${timeAgo(e.created_at)}</td>
+          <td class="num-cell">${ttlRemaining(e.created_at, e.ttl_seconds)}</td>
+        </tr>
+      `).join('');
+
+      tableWrap.innerHTML = `
+        <table>
+          <thead>
+            <tr>
+              <th>Provider</th>
+              <th>Prompt</th>
+              <th>Hits</th>
+              <th>Cached</th>
+              <th>TTL</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      `;
+    } catch (err) {
+      tableWrap.innerHTML = `<div class="empty-state">Couldn't load cache entries: ${escapeHtml(err.message)}</div>`;
+    }
+  }
+
+  sendBtn.addEventListener('click', sendQuery);
+  promptInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) sendQuery();
+  });
+  refreshBtn.addEventListener('click', refreshEntries);
+  apiUrlInput.addEventListener('change', () => { checkHealth(); refreshEntries(); });
+
+  resetGauge();
+  checkHealth();
+  refreshEntries();
+})();
+</script>
+</body>
+</html>

@@ -12,6 +12,7 @@ from contextlib import asynccontextmanager
 
 import redis.asyncio as redis
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.cache_engine import CacheEngine
 from app.config import get_settings
@@ -62,6 +63,19 @@ app = FastAPI(
 )
 
 app.include_router(router)
+
+# CORS: the frontend (frontend/index.html, served by its own nginx container
+# on a different port) calls this API directly from the browser. Wide open
+# for local/dev use — tighten `allow_origins` to your real frontend origin(s)
+# before exposing this publicly.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["Cache-Hit", "X-Similarity-Score"],
+)
 
 
 @app.get("/")

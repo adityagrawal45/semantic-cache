@@ -258,6 +258,18 @@ async def simulate_threshold(threshold: float = 0.90):
     )
 
 
+@router.get("/cache/entries")
+async def list_cache_entries(request: Request, limit: int = 50):
+    """List recent cache entries — powers the frontend's cache browser view.
+    Not paginated beyond a simple `limit`; this is a debugging/inspection
+    endpoint, not meant for scanning the entire cache at scale.
+    """
+    engine = request.app.state.cache_engine
+    limit = max(1, min(limit, 200))
+    entries = await engine.list_entries(limit=limit)
+    return {"count": len(entries), "entries": entries}
+
+
 @router.get("/health")
 async def health():
     return {"status": "ok", "service": settings.app_name}

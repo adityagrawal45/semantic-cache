@@ -246,3 +246,39 @@ class CacheEngine:
             deleted += 1
         CACHE_SIZE_ENTRIES.dec(deleted)
         return deleted
+
+    # ------------------------------------------------------------------ #
+    # Browsing (powers the frontend's cache inspector view)
+    # ------------------------------------------------------------------ #
+    async def list_entries(self, limit: int = 50) -> list:
+        """Return recent cache entries (newest first) for display in the
+        frontend's cache browser. Uses a raw Redis SCAN + HGETALL rather
+        than a RedisVL query, since we just want "everything, capped and
+        sorted" rather than a filtered/vector search.
+        """
+        entries = []
+        async for key in self._redis.scan_iter(match=f"{settings.redis_prefix}*", count=200):
+            data = await self._redis.hgetall(key)
+            if not data:
+                continue
+
+            def _decode(value, default=""):
+                if value is None:
+                    return default
+                return value.decode("utf-8") if isinstance(value, bytes) else value
+
+            try:
+                entries.append({
+                    "key": _decode(key),
+                    "provider": _decode(data.get(b"provider"), "unknown"),
+                    "prompt_text": _decode(data.get(b"prompt_text"), ""),
+                    "hit_count": int(_decode(data.get(b"hit_count"), "0") or 0),
+                    "created_at": float(_decode(data.get(b"created_at"), "0") or 0),
+                    "ttl_seconds": int(_decode(data.get(b"ttl_seconds"), "0") or 0),
+                })
+            except (ValueError, TypeError) as exc:  # noqa: BLE001
+                logger.warning("Skipping malformed cache entry %s: %s", key, exc)
+                continue
+
+        entries.sort(key=lambda e: e["created_at"], reverse=True)
+        return entries[:limit]

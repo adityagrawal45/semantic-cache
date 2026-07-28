@@ -106,7 +106,8 @@
   }
 
   .api-config input {
-    width: 240px;
+    width: 190px;
+    min-width: 0;
     background: var(--surface);
     border: 1px solid var(--border);
     color: var(--text);
@@ -444,6 +445,8 @@
       <span class="status-dot" id="statusDot"></span>
       <span>API</span>
       <input type="text" id="apiUrl" value="http://localhost:8000" spellcheck="false">
+      <span>Key</span>
+      <input type="password" id="apiKey" placeholder="optional — only if auth enabled" spellcheck="false" autocomplete="off">
     </div>
   </header>
 
@@ -518,6 +521,7 @@
 (function () {
   const $ = (id) => document.getElementById(id);
   const apiUrlInput = $('apiUrl');
+  const apiKeyInput = $('apiKey');
   const statusDot = $('statusDot');
   const modelInput = $('modelInput');
   const tempInput = $('tempInput');
@@ -540,6 +544,15 @@
 
   function apiBase() {
     return apiUrlInput.value.replace(/\/+$/, '');
+  }
+
+  function authHeaders() {
+    const key = apiKeyInput.value.trim();
+    // Sent as Authorization: Bearer, matching what OpenAI-compatible SDKs
+    // send natively — if auth is disabled server-side (no API_KEYS
+    // configured), this header is simply ignored, so it's always safe to
+    // include regardless of whether the field is filled in.
+    return key ? { 'Authorization': `Bearer ${key}` } : {};
   }
 
   function setGauge(score, isHit, threshold) {
@@ -594,7 +607,7 @@
     try {
       const res = await fetch(`${apiBase()}/v1/chat/completions`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({
           model,
           temperature: parseFloat(tempInput.value) || 0.7,
@@ -615,7 +628,9 @@
         responseText.innerHTML = '';
         const box = document.createElement('div');
         box.className = 'error-box';
-        box.textContent = `HTTP ${res.status} — ${errBody.slice(0, 400)}`;
+        box.textContent = res.status === 401
+          ? `HTTP 401 — this API requires an API key. Enter one in the "Key" field at the top right.`
+          : `HTTP ${res.status} — ${errBody.slice(0, 400)}`;
         responseText.appendChild(box);
         hitBadge.className = 'badge idle';
         hitBadge.textContent = 'ERROR';
@@ -680,8 +695,8 @@
 
   async function refreshEntries() {
     try {
-      const res = await fetch(`${apiBase()}/cache/entries?limit=50`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const res = await fetch(`${apiBase()}/cache/entries?limit=50`, { headers: authHeaders() });
+      if (!res.ok) throw new Error(res.status === 401 ? '401 — enter an API key above' : `HTTP ${res.status}`);
       const data = await res.json();
       const entries = data.entries || [];
       entryCount.textContent = `${data.count ?? entries.length} entries`;
@@ -726,6 +741,7 @@
   });
   refreshBtn.addEventListener('click', refreshEntries);
   apiUrlInput.addEventListener('change', () => { checkHealth(); refreshEntries(); });
+  apiKeyInput.addEventListener('change', () => { checkHealth(); refreshEntries(); });
 
   resetGauge();
   checkHealth();

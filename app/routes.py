@@ -2,22 +2,29 @@
 routes.py — API surface for the semantic cache service.
 
 Endpoints:
-    POST   /v1/chat/completions      OpenAI-compatible drop-in endpoint
-    POST   /cache/invalidate         Invalidate by system_hash / model
-    DELETE /cache/prefix/{prefix}    Invalidate by key prefix
-    GET    /threshold/simulate       Replay logs at a hypothetical threshold
-    GET    /health                   Liveness/readiness probe
-    GET    /metrics                  Prometheus scrape endpoint
+    POST   /v1/chat/completions      OpenAI-compatible drop-in endpoint   [auth]
+    POST   /cache/invalidate         Invalidate by system_hash / model    [auth]
+    DELETE /cache/prefix/{prefix}    Invalidate by key prefix             [auth]
+    GET    /threshold/simulate       Replay logs at a hypothetical threshold [auth]
+    GET    /cache/entries            Browse cached entries                [auth]
+    GET    /health                   Liveness/readiness probe             (open — needed by Docker healthchecks)
+    GET    /metrics                  Prometheus scrape endpoint           (open — needed by Prometheus, which doesn't send a key)
+
+[auth] endpoints require a valid API key when API_KEYS is configured (see
+app/auth.py and app/config.py). With API_KEYS unset, auth is a no-op and
+every endpoint behaves as before — nothing changes for existing deployments
+that haven't opted in.
 """
 
 import json
 import logging
 import time
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import StreamingResponse
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
+from app.auth import require_api_key
 from app.cache_engine import hash_params, hash_system_prompt
 from app.config import get_settings
 from app.embeddings import embed_text
@@ -66,7 +73,7 @@ def _resolve_threshold(request: ChatCompletionRequest) -> float:
     return type_thresholds.get(req_type, settings.similarity_threshold)
 
 
-@router.post("/v1/chat/completions")
+@router.post("/v1/chat/completions", dependencies=[Depends(require_api_key)])
 async def chat_completions(request: Request, body: ChatCompletionRequest, response: Response):
     app_state = request.app.state
     cache_engine = app_state.cache_engine
@@ -235,21 +242,21 @@ async def _stream_and_cache(body, provider, embedding, system_hash, param_hash, 
             )
 
 
-@router.post("/cache/invalidate", response_model=InvalidateResponse)
+@router.post("/cache/invalidate", response_model=InvalidateResponse, dependencies=[Depends(require_api_key)])
 async def invalidate(request: Request, body: InvalidateRequest):
     engine = request.app.state.cache_engine
     deleted = await engine.invalidate_by_criteria(system_hash=body.system_hash, model=body.model)
     return InvalidateResponse(deleted_count=deleted, matched_criteria=body.model_dump(exclude_none=True))
 
 
-@router.delete("/cache/prefix/{prefix}", response_model=InvalidateResponse)
+@router.delete("/cache/prefix/{prefix}", response_model=InvalidateResponse, dependencies=[Depends(require_api_key)])
 async def invalidate_prefix(request: Request, prefix: str):
     engine = request.app.state.cache_engine
     deleted = await engine.invalidate_by_prefix(prefix)
     return InvalidateResponse(deleted_count=deleted, matched_criteria={"prefix": prefix})
 
 
-@router.get("/threshold/simulate", response_model=ThresholdSimulationResult)
+@router.get("/threshold/simulate", response_model=ThresholdSimulationResult, dependencies=[Depends(require_api_key)])
 async def simulate_threshold(threshold: float = 0.90):
     """Replay logged near-miss (and implicitly, hit) data to estimate what
     the hit rate *would have been* at a different threshold. This is a
@@ -273,7 +280,7 @@ async def simulate_threshold(threshold: float = 0.90):
     )
 
 
-@router.get("/cache/entries")
+@router.get("/cache/entries", dependencies=[Depends(require_api_key)])
 async def list_cache_entries(request: Request, limit: int = 50):
     """List recent cache entries — powers the frontend's cache browser view.
     Not paginated beyond a simple `limit`; this is a debugging/inspection

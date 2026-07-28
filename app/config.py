@@ -61,6 +61,15 @@ class Settings(BaseSettings):
     near_miss_log_path: str = "logs/near_misses.jsonl"
     near_miss_lower_bound: float = 0.80  # log queries scoring between this and threshold
 
+    # --- API key auth ---
+    # Comma-separated list of valid client API keys, e.g. "sk-abc123,sk-def456".
+    # Leave blank (default) to disable auth entirely — matches every existing
+    # deployment of this project unless explicitly opted in. When set,
+    # protected endpoints require either an "Authorization: Bearer <key>"
+    # header (what every OpenAI-compatible SDK sends automatically — zero
+    # client code changes needed) or an "X-API-Key: <key>" header.
+    api_keys: Optional[str] = None
+
 
 @lru_cache
 def get_settings() -> Settings:

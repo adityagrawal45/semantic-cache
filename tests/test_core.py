@@ -100,3 +100,66 @@ def test_resolve_provider_still_routes_openai_and_anthropic():
     assert resolve_provider("gpt-4o-mini").name == "openai"
     assert resolve_provider("claude-3-5-sonnet-20241022").name == "anthropic"
     assert resolve_provider("ollama/llama3").name == "ollama"
+
+
+def _reset_auth_caches():
+    """Both get_settings() and _configured_keys() are @lru_cache'd, so
+    tests that change API_KEYS via monkeypatch must clear both caches or
+    they'll see a stale value from an earlier test."""
+    from app.config import get_settings
+    from app.auth import _configured_keys
+    get_settings.cache_clear()
+    _configured_keys.cache_clear()
+
+
+def test_auth_disabled_when_no_keys_configured(monkeypatch):
+    monkeypatch.delenv("API_KEYS", raising=False)
+    _reset_auth_caches()
+    from app.auth import auth_enabled
+    assert auth_enabled() is False
+
+
+def test_auth_enabled_when_keys_configured(monkeypatch):
+    monkeypatch.setenv("API_KEYS", "test-key-123,test-key-456")
+    _reset_auth_caches()
+    from app.auth import auth_enabled, _configured_keys, _matches_any
+    assert auth_enabled() is True
+    keys = _configured_keys()
+    assert _matches_any("test-key-123", keys) is True
+    assert _matches_any("wrong-key", keys) is False
+
+
+@pytest.mark.asyncio
+async def test_require_api_key_rejects_missing_key(monkeypatch):
+    monkeypatch.setenv("API_KEYS", "secret-abc")
+    _reset_auth_caches()
+    from fastapi import HTTPException
+    from app.auth import require_api_key
+
+    with pytest.raises(HTTPException) as exc_info:
+        await require_api_key(authorization=None, x_api_key=None)
+    assert exc_info.value.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_require_api_key_accepts_bearer_token(monkeypatch):
+    monkeypatch.setenv("API_KEYS", "secret-abc")
+    _reset_auth_caches()
+    from app.auth import require_api_key
+    await require_api_key(authorization="Bearer secret-abc", x_api_key=None)  # should not raise
+
+
+@pytest.mark.asyncio
+async def test_require_api_key_accepts_x_api_key_header(monkeypatch):
+    monkeypatch.setenv("API_KEYS", "secret-abc")
+    _reset_auth_caches()
+    from app.auth import require_api_key
+    await require_api_key(authorization=None, x_api_key="secret-abc")  # should not raise
+
+
+@pytest.mark.asyncio
+async def test_require_api_key_noop_when_auth_disabled(monkeypatch):
+    monkeypatch.delenv("API_KEYS", raising=False)
+    _reset_auth_caches()
+    from app.auth import require_api_key
+    await require_api_key(authorization=None, x_api_key=None)  # should not raise — auth is off

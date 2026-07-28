@@ -85,6 +85,8 @@ Two requests can be semantically close in *user message* embedding space while m
 | Near-miss logging | Queries that almost hit are logged for offline threshold tuning |
 | Observability | Prometheus metrics + provisioned Grafana dashboard (hit rate, cost savings, latency percentiles, cache size, similarity distribution) |
 | Fully containerized | `docker-compose up --build` brings up API, Redis (RedisVL), Prometheus, Grafana, and (optionally) Ollama |
+| Playground UI | Standalone frontend (`http://localhost:5173`) with a live similarity gauge and a cache browser — see [Try the playground](#4-try-the-playground) |
+| API key auth | Optional, off by default. `Authorization: Bearer <key>` (what OpenAI SDKs send natively — zero client changes needed) or `X-API-Key` — see [Authentication](#authentication) |
 
 ## Repository Layout
 
@@ -93,6 +95,7 @@ semantic-cache/
 ├── app/
 │   ├── main.py                # FastAPI entrypoint, startup/shutdown wiring
 │   ├── config.py               # Env-driven settings (pydantic-settings)
+│   ├── auth.py                  # Optional API key authentication
 │   ├── models.py                # OpenAI-compatible request/response schemas
 │   ├── embeddings.py            # OpenAI embeddings wrapper + mock fallback
 │   ├── providers.py             # OpenAI / Anthropic / Ollama / Groq abstraction + streaming
@@ -113,9 +116,10 @@ semantic-cache/
 │   └── load_test.py             # 2,000-request async load test (40/30/30 mix)
 ├── scripts/
 │   ├── threshold_tuner.py       # Offline: sweep thresholds against near-miss logs
-│   └── invalidate.py            # CLI: invalidate by hash/model/prefix
+│   ├── invalidate.py            # CLI: invalidate by hash/model/prefix
+│   └── generate_api_key.py      # Generate a secure key for API_KEYS
 ├── tests/
-│   └── test_core.py             # Unit tests (hashing, TTL rules, embeddings)
+│   └── test_core.py             # Unit tests (hashing, TTL rules, embeddings, auth)
 ├── Dockerfile
 ├── docker-compose.yml
 ├── requirements.txt
@@ -176,6 +180,47 @@ Both requests are cached under `provider="groq"`, so repeats and semantic rephra
 **If you only have a Groq key and no OpenAI key:** set `DEFAULT_TO_GROQ=true` so unrecognized/ambiguous model names fall back to Groq instead of failing against a missing OpenAI key, and leave `USE_MOCK_EMBEDDINGS` unset — it defaults to mock automatically whenever `OPENAI_API_KEY` is blank, regardless of the flag's literal value.
 
 Groq's hosted model list changes over time — check [console.groq.com/docs/models](https://console.groq.com/docs/models) for the current set, and prefer the explicit `groq/` prefix over relying on the built-in recognized-model list, which is not exhaustive.
+
+## Authentication
+
+Off by default — every deployment that hasn't explicitly opted in keeps working exactly as before. When enabled, it protects the service from unauthenticated use (important the moment this is reachable by anyone besides you, since every request costs real provider spend).
+
+**Enable it:**
+
+```bash
+python scripts/generate_api_key.py
+# copy the output into .env:
+API_KEYS=sk-cache-AbC123...
+```
+
+Multiple keys are supported, comma-separated (`API_KEYS=key-one,key-two`) — useful for giving different clients/teams their own key without sharing one.
+
+**Clients authenticate with either:**
+- `Authorization: Bearer <key>` — what every OpenAI-compatible SDK sends automatically the moment you configure an API key on the client. **No code changes needed** on any app already pointed at this service via `base_url` — this is exactly why that header was chosen over inventing a custom one.
+- `X-API-Key: <key>` — simpler for `curl`/scripts that aren't using an OpenAI-style client.
+
+```bash
+curl http://localhost:8000/v1/chat/completions \
+  -H "Authorization: Bearer sk-cache-AbC123..." \
+  -H "Content-Type: application/json" \
+  -d '{"model":"llama-3.3-70b-versatile","messages":[{"role":"user","content":"hello"}]}'
+```
+
+**What's protected vs. what stays open:**
+
+| Endpoint | Auth required? |
+|---|---|
+| `POST /v1/chat/completions` | Yes |
+| `POST /cache/invalidate` | Yes |
+| `DELETE /cache/prefix/{prefix}` | Yes |
+| `GET /threshold/simulate` | Yes |
+| `GET /cache/entries` | Yes |
+| `GET /health` | No — Docker's healthcheck hits this without a key |
+| `GET /metrics` | No — Prometheus's scraper doesn't send one either |
+
+**Using the playground with auth on:** a **Key** field sits next to the API URL field at the top of `http://localhost:5173`. Paste the same key there — the playground sends it as `Authorization: Bearer` automatically on every request that needs it. A 401 response shows a specific "enter your API key above" message instead of a generic error.
+
+**What this is, and isn't:** this is a single shared-secret check, not a full auth system — there's no per-key rate limiting, no key expiry, and no management API to issue/revoke keys without editing `.env` and restarting. Sufficient for "keep random internet traffic out" and "give a few known clients their own key"; not sufficient for a public multi-tenant product without further work (see [Known Limitations](#known-limitations--follow-ups)).
 
 ## Deployment Guide
 
@@ -322,11 +367,14 @@ pip install -r requirements.txt
 pytest tests/ -v
 ```
 
-Unit tests cover hashing stability, TTL classification rules, request-type classification, and the mock embedding fallback — all runnable without a live Redis or provider connection. End-to-end behavior (actual cache hits/misses) is exercised by the load test against a running stack.
+Unit tests cover hashing stability, TTL classification rules, request-type classification, the mock embedding fallback, and API key auth (missing key rejected, valid Bearer/X-API-Key accepted, auth is a no-op when disabled) — all runnable without a live Redis or provider connection. End-to-end behavior (actual cache hits/misses) is exercised by the load test against a running stack.
 
 ## Security Notes
 
 - No secrets are hardcoded anywhere in this repo; all credentials come from environment variables (`.env`, excluded from version control — see `.env.example` for the full list).
+- API key auth is available (see [Authentication](#authentication)) but off by default — **set `API_KEYS` before exposing this beyond localhost**, or anyone who reaches the port can run up your provider bill.
+- CORS is wide open (`allow_origins=["*"]` in `app/main.py`) to support the browser-based playground out of the box. Tighten this to your actual frontend origin(s) before deploying anywhere beyond local dev.
+- There's no rate limiting — API key auth controls *who* can call the service, not *how often*. A single compromised or misbehaving key can still generate unbounded provider spend.
 - The service does not log full prompt/response bodies by default beyond what's needed for the cache itself and near-miss analysis (capped at 2,000 characters per entry).
 - Cache entries expire via Redis TTL; there's no unbounded growth as long as `TTL_LONG_SECONDS` is set sensibly for your data sensitivity requirements.
 
@@ -335,3 +383,4 @@ Unit tests cover hashing stability, TTL classification rules, request-type class
 - The TTL classifier is intentionally simple (regex-based) for speed and auditability; a learned classifier could be swapped in via `ttl_classifier.py` if keyword rules prove too coarse.
 - `threshold/simulate` currently estimates off logged near-misses only, not a full historical query log; for a more rigorous analysis, extend `near_miss_analyzer.py` to log *all* lookups (not just near misses) if storage volume allows.
 - Streaming cache hits currently replay as a single chunk rather than re-chunked to mimic the original token-by-token cadence — functionally identical to the client, but worth knowing if you're testing token-level timing.
+- API key auth (`app/auth.py`) is a single shared-secret check — no per-key rate limiting, no key expiry/rotation, no issue/revoke API, and no multi-tenant cache isolation (two different keys still share one cache namespace, so one client could theoretically see hit/miss behavior influenced by another's traffic, though not the actual cached content without a valid similarity match under their own system prompt/params). A production multi-tenant rollout would need cache keys namespaced by API key, plus a proper key-management layer.

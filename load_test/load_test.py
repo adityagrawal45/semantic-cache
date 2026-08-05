@@ -88,7 +88,7 @@ def _percentile(data: List[float], pct: float) -> float:
 
 async def _send_one(client: httpx.AsyncClient, prompt: str, base_url: str) -> RequestResult:
     payload = {
-        "model": "gpt-4o-mini",
+        "model": "groq/llama-3.1-8b-instant",
         "messages": [
             {"role": "system", "content": "You are a helpful assistant."},
             {"role": "user", "content": prompt},

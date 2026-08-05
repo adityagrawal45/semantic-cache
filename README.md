@@ -1,8 +1,6 @@
 # Semantic Caching Layer for LLM APIs
 
-> **A drop-in caching layer that reduced LLM API costs by `[X]%` and P95 latency by `[Y]%` on a 2,000-request load test.**
->
-> *(Placeholders above — run `load_test/load_test.py` against your deployment and paste the real numbers from `load_test/results.json` into this line before sharing externally. See [Load Test Results](#load-test-results) for how to reproduce.)*
+> **A drop-in caching layer that reduced LLM API costs by `52%` and P95 latency by `3.63%` on a 150-request load test.**
 
 ## Why this exists
 
@@ -316,25 +314,26 @@ Adaptive per-request-type thresholds are already applied automatically (classifi
 python load_test/load_test.py --base-url http://localhost:8000 --requests 2000 --concurrency 50
 ```
 
-This prints a JSON summary and writes it to `load_test/results.json`:
+This prints a JSON summary and writes it to `load_test/results.json`. The numbers below are an actual measured run (not the 2,000/50 default shown above — see note):
 
 ```json
 {
-  "total_requests": 2000,
-  "hits": "<measured>",
-  "misses": "<measured>",
-  "hit_rate_pct": "<measured>",
-  "latency_hit_p50_ms": "<measured>",
-  "latency_hit_p95_ms": "<measured>",
-  "latency_miss_p50_ms": "<measured>",
-  "latency_miss_p95_ms": "<measured>",
-  "overall_p95_ms": "<measured>",
-  "p95_latency_improvement_pct": "<measured>",
-  "estimated_cost_savings_usd": "<measured>"
+  "total_requests": 150,
+  "hits": 78,
+  "misses": 72,
+  "errors": 0,
+  "hit_rate_pct": 52.0,
+  "latency_hit_p50_ms": 46.12,
+  "latency_hit_p95_ms": 50.56,
+  "latency_miss_p50_ms": 2362.62,
+  "latency_miss_p95_ms": 2652.05,
+  "overall_p95_ms": 2555.66,
+  "p95_latency_improvement_pct": 3.63,
+  "estimated_cost_savings_usd": 0.0546
 }
 ```
 
-> **Note:** actual numbers depend on your provider latency, network conditions, and real embedding model (vs. mock mode), so they're intentionally left as placeholders here rather than fabricated. Run the load test against your target environment and drop the real `hit_rate_pct` and `p95_latency_improvement_pct` into the headline at the top of this document before presenting it.
+> **Note:** this run used `--requests 150 --concurrency 1` (not the 2,000/50 default) against `groq/llama-3.1-8b-instant`, because Groq's free-tier rate limit (6,000 tokens/min) caused a 63% error rate at full scale/concurrency. Embeddings used the deterministic mock fallback (`OPENAI_API_KEY` unset), so only byte-identical repeats hit the cache — semantically-similar-but-reworded prompts did not, which is part of why the hit rate reflects the "identical repeats" bucket more than the "similar rephrasings" bucket. A larger run against a higher-limit tier and real embeddings would likely show a higher hit rate and a cleaner P95 improvement (a 150-request sample splits close to 50/50 hit/miss, so the 95th-percentile bucket still lands mostly in miss-latency territory). Numbers depend on your provider tier, network conditions, and embedding mode — rerun against your target environment and update this line and the headline before presenting elsewhere.
 
 ### Cost Savings Projection (methodology)
 
